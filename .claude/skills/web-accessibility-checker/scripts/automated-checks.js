@@ -2,7 +2,7 @@
 
 /**
  * Automated Web Accessibility Checker
- * Uses axe-core via Puppeteer to run WCAG 2.2 Level A/AA automated tests
+ * Uses axe-core via Playwright to run WCAG 2.2 Level A/AA automated tests
  *
  * Usage:
  *   node automated-checks.js <url> [--output violations.json] [--no-headless]
@@ -13,7 +13,7 @@
  *   node automated-checks.js http://localhost:3000 --no-headless
  *
  * Requirements:
- *   npm install puppeteer @axe-core/puppeteer
+ *   npm install playwright @axe-core/playwright
  */
 
 import { fileURLToPath } from 'url';
@@ -24,17 +24,18 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Lazy import to provide better error messages
-let puppeteer;
-let AxePuppeteer;
+let chromium;
+let AxeBuilder;
 
 try {
-  puppeteer = await import('puppeteer');
-  const axeModule = await import('@axe-core/puppeteer');
-  AxePuppeteer = axeModule.default;
+  const playwright = await import('playwright');
+  chromium = playwright.chromium;
+  const axeModule = await import('@axe-core/playwright');
+  AxeBuilder = axeModule.default;
 } catch (e) {
   console.error('Error: Missing required packages', e.message);
   console.error('\nInstall dependencies with:');
-  console.error('  npm install puppeteer @axe-core/puppeteer');
+  console.error('  npm install playwright @axe-core/playwright');
   process.exit(1);
 }
 
@@ -52,16 +53,16 @@ class AccessibilityChecker {
   }
 
   /**
-   * Initialize Puppeteer browser and page
+   * Initialize Playwright browser and page
    */
   async setupBrowser() {
-    this.browser = await puppeteer.default.launch({
-      headless: this.headless ? 'new' : false,
+    this.browser = await chromium.launch({
+      headless: this.headless,
       args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
     });
 
     this.page = await this.browser.newPage();
-    await this.page.setViewport({ width: 1920, height: 1080 });
+    await this.page.setViewportSize({ width: 1920, height: 1080 });
   }
 
   /**
@@ -75,19 +76,14 @@ class AccessibilityChecker {
     }
 
     console.error(`Loading ${url}...`);
-    await this.page.goto(url, { waitUntil: 'networkidle2' });
+    await this.page.goto(url, { waitUntil: 'networkidle' });
 
     // Run axe-core with WCAG 2.2 Level A and AA rules
     console.error('Running accessibility checks...');
-    const axe = new AxePuppeteer(this.page);
+    const axe = new AxeBuilder({ page: this.page });
 
     const results = await axe
-      .options({
-        runOnly: {
-          type: 'tag',
-          values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa']
-        }
-      })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa'])
       .analyze();
 
     // Enhance violations with additional metadata
