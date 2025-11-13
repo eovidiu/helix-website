@@ -16,12 +16,7 @@
  *   npm install playwright @axe-core/playwright
  */
 
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 import fs from 'fs';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 // Lazy import to provide better error messages
 let chromium;
@@ -33,11 +28,50 @@ try {
   const axeModule = await import('@axe-core/playwright');
   AxeBuilder = axeModule.default;
 } catch (e) {
-  console.error('Error: Missing required packages', e.message);
+  console.error(`Error: Missing required packages: ${e.message}`);
   console.error('\nInstall dependencies with:');
   console.error('  npm install playwright @axe-core/playwright');
   process.exit(1);
 }
+
+// POUR principle rule mappings (moved to module level to avoid recreation)
+// These map axe-core rule IDs to WCAG POUR principles
+const POUR_RULES = {
+  // Perceivable (1.x success criteria)
+  Perceivable: [
+    'image-alt', 'input-image-alt', 'area-alt', 'object-alt',
+    'video-caption', 'audio-caption', 'video-description',
+    'color-contrast', 'color-contrast-enhanced',
+    'aria-hidden-body', 'aria-text',
+    'heading-order', 'p-as-heading',
+    'meta-viewport', 'meta-viewport-large'
+  ],
+  // Operable (2.x success criteria)
+  Operable: [
+    'accesskeys', 'tabindex', 'focus-order-semantics',
+    'bypass', 'skip-link',
+    'link-in-text-block', 'link-name',
+    'button-name', 'frame-title',
+    'meta-refresh', 'meta-refresh-no-exceptions',
+    'scrollable-region-focusable'
+  ],
+  // Understandable (3.x success criteria)
+  Understandable: [
+    'html-lang-valid', 'html-has-lang', 'valid-lang',
+    'label', 'label-title-only', 'label-content-name-mismatch',
+    'form-field-multiple-labels',
+    'autocomplete-valid', 'input-button-name'
+  ],
+  // Robust (4.x success criteria)
+  Robust: [
+    'aria-valid-attr', 'aria-valid-attr-value',
+    'aria-allowed-attr', 'aria-required-attr',
+    'aria-required-children', 'aria-required-parent',
+    'aria-roles', 'aria-allowed-role',
+    'duplicate-id', 'duplicate-id-active', 'duplicate-id-aria',
+    'list', 'listitem', 'definition-list', 'dlitem'
+  ]
+};
 
 /**
  * Automated accessibility checker using axe-core
@@ -94,6 +128,10 @@ class AccessibilityChecker {
 
   /**
    * Enhance axe results with additional categorization and metadata
+   *
+   * Note: Output uses snake_case for property names (wcag_level, pour_principle, etc.)
+   * to maintain consistency with axe-core's output format and external API contract.
+   *
    * @param {Object} results - Raw axe-core results
    * @param {string} url - The tested URL
    * @returns {Object} Enhanced results dictionary
@@ -218,54 +256,12 @@ class AccessibilityChecker {
    * @returns {string} POUR principle
    */
   _getPourPrinciple(ruleId) {
-    // Perceivable (1.x success criteria)
-    const perceivableRules = [
-      'image-alt', 'input-image-alt', 'area-alt', 'object-alt',
-      'video-caption', 'audio-caption', 'video-description',
-      'color-contrast', 'color-contrast-enhanced',
-      'aria-hidden-body', 'aria-text',
-      'heading-order', 'p-as-heading',
-      'meta-viewport', 'meta-viewport-large'
-    ];
-
-    // Operable (2.x success criteria)
-    const operableRules = [
-      'accesskeys', 'tabindex', 'focus-order-semantics',
-      'bypass', 'skip-link',
-      'link-in-text-block', 'link-name',
-      'button-name', 'frame-title',
-      'meta-refresh', 'meta-refresh-no-exceptions',
-      'scrollable-region-focusable'
-    ];
-
-    // Understandable (3.x success criteria)
-    const understandableRules = [
-      'html-lang-valid', 'html-has-lang', 'valid-lang',
-      'label', 'label-title-only', 'label-content-name-mismatch',
-      'form-field-multiple-labels',
-      'autocomplete-valid', 'input-button-name'
-    ];
-
-    // Robust (4.x success criteria)
-    const robustRules = [
-      'aria-valid-attr', 'aria-valid-attr-value',
-      'aria-allowed-attr', 'aria-required-attr',
-      'aria-required-children', 'aria-required-parent',
-      'aria-roles', 'aria-allowed-role',
-      'duplicate-id', 'duplicate-id-active', 'duplicate-id-aria',
-      'list', 'listitem', 'definition-list', 'dlitem'
-    ];
-
-    if (perceivableRules.some(rule => ruleId.includes(rule))) {
-      return 'Perceivable';
-    } else if (operableRules.some(rule => ruleId.includes(rule))) {
-      return 'Operable';
-    } else if (understandableRules.some(rule => ruleId.includes(rule))) {
-      return 'Understandable';
-    } else if (robustRules.some(rule => ruleId.includes(rule))) {
-      return 'Robust';
+    // Check each POUR principle's rules
+    for (const [principle, rules] of Object.entries(POUR_RULES)) {
+      if (rules.some(rule => ruleId.includes(rule))) {
+        return principle;
+      }
     }
-
     return 'Unknown';
   }
 
@@ -303,6 +299,10 @@ function parseArgs() {
 
   for (let i = 1; i < args.length; i++) {
     if (args[i] === '--output' || args[i] === '-o') {
+      if (i + 1 >= args.length || args[i + 1].startsWith('--')) {
+        console.error(`Error: ${args[i]} requires a file path argument`);
+        process.exit(1);
+      }
       parsed.output = args[i + 1];
       i++; // Skip next arg
     } else if (args[i] === '--no-headless') {
